@@ -21,13 +21,16 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 import jp.co.cyberagent.android.gpuimage.util.TextureRotationUtil;
+import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.PointF;
 import android.opengl.GLES20;
 
 public class GPUImageTwoInputFilter extends GPUImageFilter {
     private static final String VERTEX_SHADER = "attribute vec4 position;\n" +
             "attribute vec4 inputTextureCoordinate;\n" +
             "attribute vec4 inputTextureCoordinate2;\n" +
+            "uniform vec2 inputTexturePosition2;\n" +
             " \n" +
             "varying vec2 textureCoordinate;\n" +
             "varying vec2 textureCoordinate2;\n" +
@@ -37,13 +40,31 @@ public class GPUImageTwoInputFilter extends GPUImageFilter {
             "    gl_Position = position;\n" +
             "    textureCoordinate = inputTextureCoordinate.xy;\n" +
             "    textureCoordinate2 = inputTextureCoordinate2.xy;\n" +
+            "	 textureCoordinate2.x += inputTexturePosition2.x;\n" +
+            "	 textureCoordinate2.y += inputTexturePosition2.y;\n" +
             "}";
 
     public int mFilterSecondTextureCoordinateAttribute;
+    public int mFilterSecondTexturePositionLocation;
     public int mFilterInputTextureUniform2;
     public int mFilterSourceTexture2 = OpenGlUtils.NO_TEXTURE;
     private ByteBuffer mTexture2CoordinatesBuffer;
     private Bitmap mBitmap;
+    
+    private PointF mTopLeft = new PointF(0f, 0f);
+    private PointF mTopRight = new PointF(1f, 0f);
+    private PointF mBottomLeft = new PointF(0f, 1f);
+    private PointF mBottomRight = new PointF(1f, 1f);
+    
+    private Rotation mRotation = Rotation.NORMAL;
+    private boolean mFlipHorizontal = false;
+    private boolean mFlipVertical = false;
+    private PointF mPosition = new PointF(0f, 0f);
+    
+    private boolean mUseImageSize = false;
+    private float mScale = 1f;
+    private float mScaleX = 1f;
+    private float mScaleY = 1f;
 
     public GPUImageTwoInputFilter(String fragmentShader) {
         this(VERTEX_SHADER, fragmentShader);
@@ -59,12 +80,22 @@ public class GPUImageTwoInputFilter extends GPUImageFilter {
         super.onInit();
 
         mFilterSecondTextureCoordinateAttribute = GLES20.glGetAttribLocation(getProgram(), "inputTextureCoordinate2");
+        mFilterSecondTexturePositionLocation = GLES20.glGetUniformLocation(getProgram(), "inputTexturePosition2");
         mFilterInputTextureUniform2 = GLES20.glGetUniformLocation(getProgram(), "inputImageTexture2"); // This does assume a name of "inputImageTexture2" for second input texture in the fragment shader
+        
         GLES20.glEnableVertexAttribArray(mFilterSecondTextureCoordinateAttribute);
-
+        
+        setCenterPosition(mPosition);
+        
         if (mBitmap != null&&!mBitmap.isRecycled()) {
             setBitmap(mBitmap);
         }
+    }
+    
+    @Override
+    public void onInitialized() {
+    	super.onInitialized();
+    	
     }
     
     public void setBitmap(final Bitmap bitmap) {
@@ -81,11 +112,38 @@ public class GPUImageTwoInputFilter extends GPUImageFilter {
                     if (bitmap == null || bitmap.isRecycled()) {
                         return;
                     }
+                    
+                    refreshImageSize();
+                    
                     GLES20.glActiveTexture(GLES20.GL_TEXTURE3);
                     mFilterSourceTexture2 = OpenGlUtils.loadTexture(bitmap, OpenGlUtils.NO_TEXTURE, false);
                 }
             }
         });
+    }
+    
+    public void useImageSize(boolean value){
+    	mUseImageSize = value;
+    	refreshImageSize();
+    }
+    
+    private void refreshImageSize(){
+    	if (mUseImageSize){
+    		if (mBitmap != null && getOutputWidth() > 0 && getOutputHeight() > 0){
+    			mScaleX = (float)mBitmap.getScaledWidth(Resources.getSystem().getDisplayMetrics()) / (float)getOutputWidth();
+                mScaleY = (float)mBitmap.getScaledHeight(Resources.getSystem().getDisplayMetrics()) / (float)getOutputHeight();
+    		}
+    	}else{
+    		mScaleX = 1f;
+    		mScaleY = 1f;
+    	}
+    	setScale(mScale);
+    }
+    
+    @Override
+    public void onOutputSizeChanged(int width, int height) {
+    	super.onOutputSizeChanged(width, height);
+    	refreshImageSize();
     }
 
     public Bitmap getBitmap() {
@@ -110,6 +168,7 @@ public class GPUImageTwoInputFilter extends GPUImageFilter {
     @Override
     protected void onDrawArraysPre() {
         GLES20.glEnableVertexAttribArray(mFilterSecondTextureCoordinateAttribute);
+        
         GLES20.glActiveTexture(GLES20.GL_TEXTURE3);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mFilterSourceTexture2);
         GLES20.glUniform1i(mFilterInputTextureUniform2, 3);
@@ -117,15 +176,52 @@ public class GPUImageTwoInputFilter extends GPUImageFilter {
         mTexture2CoordinatesBuffer.position(0);
         GLES20.glVertexAttribPointer(mFilterSecondTextureCoordinateAttribute, 2, GLES20.GL_FLOAT, false, 0, mTexture2CoordinatesBuffer);
     }
+    
+    public void setPosition(PointF topLeft, PointF topRight, PointF bottomLeft, PointF bottomRight) {
+		mTopLeft = topLeft;
+		mTopRight = topRight;
+		mBottomLeft = bottomLeft;
+		mBottomRight = bottomRight;
+		refreshTexture2CoordinatesBuffer();
+	}
+    
+    public void setScale(float scale){
+    	mScale = scale;
+    	
+    	mBottomRight.x = mTopRight.x = 1f / (scale * mScaleX);
+    	mBottomRight.y = mBottomLeft.y = 1f / (scale * mScaleY);
+
+    	setCenterPosition(mPosition);
+        refreshTexture2CoordinatesBuffer();
+    }
+    
+    public void setCenterPosition(PointF position){
+    	mPosition = position;
+    	
+    	float width = mBottomRight.x - mTopLeft.x;
+    	float height = mBottomRight.y - mTopLeft.y;
+    	
+    	float x = (width / 2f * -1) + 0.5f - ((mPosition.x - 0.5f) * width);
+    	float y = (height / 2f * -1) + 0.5f - ((mPosition.y - 0.5f) * height);
+
+    	setPoint(mFilterSecondTexturePositionLocation, new PointF(x, y));
+    }
+    
 
     public void setRotation(final Rotation rotation, final boolean flipHorizontal, final boolean flipVertical) {
-        float[] buffer = TextureRotationUtil.getRotation(rotation, flipHorizontal, flipVertical);
-
-        ByteBuffer bBuffer = ByteBuffer.allocateDirect(32).order(ByteOrder.nativeOrder());
+    	mRotation = rotation;
+        mFlipHorizontal = flipHorizontal;
+        mFlipVertical = flipVertical;
+        refreshTexture2CoordinatesBuffer();
+    }
+    
+    private void refreshTexture2CoordinatesBuffer(){
+    	float[] buffer = TextureRotationUtil.getRotation(mTopLeft, mTopRight, mBottomLeft, mBottomRight, mRotation, mFlipHorizontal, mFlipVertical);
+    	ByteBuffer bBuffer = ByteBuffer.allocateDirect(32).order(ByteOrder.nativeOrder());
         FloatBuffer fBuffer = bBuffer.asFloatBuffer();
         fBuffer.put(buffer);
         fBuffer.flip();
-
         mTexture2CoordinatesBuffer = bBuffer;
+        
     }
 }

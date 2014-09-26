@@ -17,54 +17,60 @@
 package jp.co.cyberagent.android.gpuimage.util;
 
 import jp.co.cyberagent.android.gpuimage.Rotation;
+import android.graphics.PointF;
 
 public class TextureRotationUtil {
-
-    public static final float TEXTURE_NO_ROTATION[] = {
-            0.0f, 1.0f,
-            1.0f, 1.0f,
-            0.0f, 0.0f,
-            1.0f, 0.0f,
-    };
-
-    public static final float TEXTURE_ROTATED_90[] = {
-            1.0f, 1.0f,
-            1.0f, 0.0f,
-            0.0f, 1.0f,
-            0.0f, 0.0f,
-    };
-    public static final float TEXTURE_ROTATED_180[] = {
-            1.0f, 0.0f,
-            0.0f, 0.0f,
-            1.0f, 1.0f,
-            0.0f, 1.0f,
-    };
-    public static final float TEXTURE_ROTATED_270[] = {
-            0.0f, 0.0f,
-            0.0f, 1.0f,
-            1.0f, 0.0f,
-            1.0f, 1.0f,
-    };
+	
+	public static final float TEXTURE_NO_ROTATION[] = {
+	        0.0f, 1.0f,
+	        1.0f, 1.0f,
+	        0.0f, 0.0f,
+	        1.0f, 0.0f,
+	};
 
     private TextureRotationUtil() {
     }
+    
+    public static float[] getRotation(final Rotation rotation, final boolean flipHorizontal, final boolean flipVertical) {
+    	return getRotation(new PointF(0f, 0f), new PointF(1f, 0f), new PointF(0f, 1f), new PointF(1f, 1f), rotation, flipHorizontal, flipVertical);
+    }
 
-    public static float[] getRotation(final Rotation rotation, final boolean flipHorizontal,
-                                                         final boolean flipVertical) {
+    public static float[] getRotation(PointF topLeft, PointF topRight, PointF bottomLeft, PointF bottomRight, final Rotation rotation, final boolean flipHorizontal, final boolean flipVertical) {
+    	
         float[] rotatedTex;
         switch (rotation) {
             case ROTATION_90:
-                rotatedTex = TEXTURE_ROTATED_90;
+                rotatedTex = new float[]{
+                		bottomRight.x, bottomRight.y, //bottomRight 
+                		topRight.x, topRight.y, //topRight
+        	            bottomLeft.x, bottomLeft.y, //bottomLeft 
+        	            topLeft.x, topLeft.y, //topLeft
+        	    };
                 break;
             case ROTATION_180:
-                rotatedTex = TEXTURE_ROTATED_180;
+                rotatedTex = new float[]{
+                		topRight.x, topRight.y, //topRight
+                		topLeft.x, topLeft.y, //topLeft 
+        	            bottomRight.x, bottomRight.y, //bottomRight 
+        	            bottomLeft.x, bottomLeft.y, //bottomLeft 
+        	    };
                 break;
             case ROTATION_270:
-                rotatedTex = TEXTURE_ROTATED_270;
+                rotatedTex = new float[]{
+                		topLeft.x, topLeft.y, //topLeft
+                		bottomLeft.x, bottomLeft.y, //bottomLeft 
+        	            topRight.x, topRight.y, //topRight
+        	            bottomRight.x, bottomRight.y, //bottomRight 
+        	    };
                 break;
             case NORMAL:
             default:
-                rotatedTex = TEXTURE_NO_ROTATION;
+                rotatedTex = new float[]{
+                		bottomLeft.x, bottomLeft.y, //bottomLeft 
+                		bottomRight.x, bottomRight.y, //bottomRight 
+                		topLeft.x, topLeft.y, //topLeft 
+        	            topRight.x, topRight.y, //topRight
+        	    };
                 break;
         }
         if (flipHorizontal) {
