@@ -170,7 +170,7 @@ public class GPUImageRenderer implements Renderer, PreviewCallback {
                     camera.addCallbackBuffer(new byte[previewSize.width * previewSize.height * p.bitsPerPixel / 8]);*/
                                          
                     camera.startPreview();
-                } catch (IOException e) {
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
